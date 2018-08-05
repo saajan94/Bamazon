@@ -3,8 +3,10 @@ var mysql = require("mysql");
 var inquirer = require("inquirer");
 var table = require("console.table");
 var colors = require("colors");
-var itemId = 0;
-var quantity = 0;
+var productId = 0;
+var productQuantity = 0;
+var selected;
+var statement;
 
 // Creates connection to SQL database
 var connection = mysql.createConnection({
@@ -22,6 +24,7 @@ connection.connect(function (err) {
     start();
 });
 
+// Function to start the applicaiton
 function start() {
     console.log("\nWelcome to Bamazon!\n".green);
     inquirer.prompt(
@@ -40,6 +43,7 @@ function start() {
     });
 }
 
+// Function that allows the use to see all of the available products via a table
 function showItems() {
     connection.query("SELECT * FROM products", function (err, res) {
         if (err) {
@@ -60,6 +64,7 @@ function showItems() {
     })
 }
 
+// Function to allow the user to select a product by its ID
 function promptUser() {
     inquirer.prompt([
         {
@@ -86,9 +91,78 @@ function promptUser() {
                 }
             }
         }
-    ])
+    ]).then(function(answer) {
+        productId = answer.id;
+        productQuantity = answer.quantity;
+
+        connection.query("SELECT * FROM products WHERE item_id=" + productId, function(err, res) {
+            selected = res[0];
+
+            if (productQuantity > selected.stock_quantity && selected.stock_quantity > 1) {
+                statement = "\nSorry, there are only " + selected.stock_quantity + " " + selected.product_name + "s available.\n"
+                console.log(statement.red)
+                promptUser();
+            } else if (productQuantity > selected.stock_quantity && selected.stock_quantity === 1) {
+                statement = "\nSorry, there is only 1 " + selected.product_name + " available.\n"
+                console.log(statement.red)
+                promptUser();
+            } else if (productQuantity > selected.stock_quantity && selected.stock_quantity < 1) {
+                statement = "\nSorry, the " + selected.product_name + " is out of stock.\n"
+                promptUser();
+            } else if (+productQuantity === 1) {
+                statement = "\nYou are purchasing 1 " + selected.product_name + ".\n"
+                buyProduct();
+            } else {
+                statement = "\nYou are purchasing " + selected.stock_quantity + " " + selected.product_name + "s.\n"
+                buyProduct();
+            }
+        });
+    });
 }
 
+// Function to allow the user to view their total and purchase the product
+function buyProduct() {
+    inquirer.prompt(
+        {
+            name: "buy",
+            type: "confirm",
+            message: statement + " Would you like to check out?"
+        }
+    ).then(function(answer) {
+        if (answer.buy) {
+            connection.query("UPDATE products SET stock_quantity = stock_quantity - ? WHERE item_id = ?", [productQuantity, productId], function(err, res) {
+                if (err) {
+                    return err
+                }
+                var total = "\nYour total is $" + (productQuantity * selected.price) + "\n";
+                console.log(total.cyan);
+                setTimeout(differentProduct, 1000);
+            });
+        } else {
+            differentProduct();
+        }
+    });
+}
+
+// Function to allow the user to select a different product
+function differentProduct() {
+    inquirer.prompt(
+        {
+            name: "different",
+            type: "confirm",
+            message: "Would you like to buy a different product?"
+        }
+    ).then(function(answer) {
+        if (answer.different) {
+            showItems();
+            setTimeout(promptUser, 1000);
+        } else {
+            exit();
+        }
+    });
+}
+
+// Function to exit the application
 function exit() {
     console.log("\nThank you for visiting Bamazon!\n".blue);
     connection.end();
